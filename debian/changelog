@@ -1,3 +1,15 @@
+wmbubble (1.51-1) unstable; urgency=low
+
+  * New upstream version.
+    - Remove debian/patches/add-init_stuff-to-sys_include.h.patch and
+      debian/patches/fixes-for-kfreebsd.patch; applied upstream.
+    - Rewrite debian/patches/fix-compiler-flags.patch for new Makefile.
+    - Rewrite debian/rules to use make install from new Makefile.
+    - Remove debian/dirs and debian/manpages; unnecessary because of new
+      Makefile.
+
+ -- Doug Torrance <dtorrance@monmouthcollege.edu>  Mon, 28 Jul 2014 18:26:58 -0500
+
 wmbubble (1.50-5) unstable; urgency=low
 
   * debian/control
