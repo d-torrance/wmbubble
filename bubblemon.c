@@ -1,4 +1,4 @@
-/*  WMBubble dockapp 1.51
+/*  WMBubble dockapp 1.52
  *
  * Todo: merge in wmfishtime/bubblefishymon, reduce number of
  * compilation-time settings, make more things configurable via xresources.
@@ -44,7 +44,7 @@
  */
 #define _GNU_SOURCE
 
-#define VERSION "1.51"
+#define VERSION "1.52"
 
 /* general includes */
 #include <stdio.h>
@@ -57,6 +57,7 @@
 #include <locale.h>
 #include <ctype.h> /* I know tolower isn't i18n, I'm sorry */
 #include <math.h>
+#include <inttypes.h>
 
 /* x11 includes */
 #include "wmx11pixmap.h"
@@ -123,9 +124,6 @@ int animate_correctly(void);
 void draw_duck(int x, int y, int frame_no, int flipx, int flipy);
 void duck_swimmer(void);
 
-#ifdef __FreeBSD__
-extern int init_stuff();	/* defined in sys_{freebsd,linux}.c */
-#endif
 /* local prototypes end *INDENT-ON* */
 
 extern char * optarg;
@@ -174,7 +172,10 @@ unsigned char cpu_gauge[25*9*3];
 
 int datefont_widths[256];
 char datefont_transparent;
-int datefont_offset;
+unsigned int datefont_offset;
+
+int duck_blink = 0;
+int blinkdelay = 1;
 
 const struct XrmUnified {
 	char * const option;
@@ -321,7 +322,7 @@ void print_usage(void) {
 	char preformat[32];
 	int i;
 	printf("WMBubble version "VERSION"\n"
-	       "Usage: "NAME" [switches] [program_1] [program_2]\n\n"
+	       "Usage: "NAME" [switches] [program1] [program2] [...] [program(# of mouse buttons)]\n\n"
 	       "Permitted options are:\n");
 	for (i=0; i < sizeof(x_resource_unified) / sizeof(x_resource_unified[0]); i++) {
 		strncpy(preformat,x_resource_unified[i].option,32);
@@ -404,11 +405,6 @@ int main(int argc, char **argv) {
 
 	argv++; argc--; /* Otherwise we'll make more of ourselves on a left click */
 
-#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
-	if (init_stuff())
-		exit(-1);
-#endif
-
 	make_new_bubblemon_dockapp();
 
 	/* the math below makes the cpu gauge try to update at 5 Hz.
@@ -418,6 +414,9 @@ int main(int argc, char **argv) {
 
 	graphdelay = graphdivisor = 1000000 / delay_time;
 	if (graphdivisor == 0) graphdivisor = 1;
+
+	blinkdelay = 150000 / delay_time;
+	if (blinkdelay == 0) blinkdelay++;
 
 	loadPercentage = 0;
 
@@ -436,14 +435,15 @@ int main(int argc, char **argv) {
 			XNextEvent(wmxp_display,&event);
 			switch (event.type) {
 			case ButtonPress:
-				if (event.xbutton.button == 3) {
+				if (memscreen_enabled && event.xbutton.button == 3) {
 					bm.picture_lock = !bm.picture_lock;
 					break;
 				}
 				if (event.xbutton.button <= argc) {
 					snprintf(execute, 250, "%s &",
 					         argv[event.xbutton.button - 1]);
-					system(execute);
+					if (system(execute) == -1)
+						duck_blink += 6 * blinkdelay;
 				}
 				break;
 			case EnterNotify:
@@ -548,19 +548,26 @@ int main(int argc, char **argv) {
 #endif /*FPS*/
 
 		/* drawing borders: 1.136us/frame */
-		int xx,yy;
-		unsigned char * from;
+		{
+			int xx,yy;
+			unsigned char * from;
 
-		for (from=bm.rgb_buf,xx=0;xx<BOX_SIZE*3-3;from++,xx++) {
-			from[0]/=4;
-			from[BOX_SIZE*(BOX_SIZE-1)*3+3]=(255+from[BOX_SIZE*(BOX_SIZE-1)*3+3])/2;
-		}
+			for (from=bm.rgb_buf,xx=0;xx<BOX_SIZE*3-3;from++,xx++) {
+				from[0]/=4;
+				from[BOX_SIZE*(BOX_SIZE-1)*3+3]=
+					(255+from[BOX_SIZE*(BOX_SIZE-1)*3+3])/2;
+			}
 
-		for (from=bm.rgb_buf,yy=0;yy<BOX_SIZE-1;yy++,from+=BOX_SIZE*3) {
-			from[0]/=4; from[1]/=4; from[2]/=4;
-			from[(2*BOX_SIZE-1)*3  ]=(255+from[(2*BOX_SIZE-1)*3  ])/2;
-			from[(2*BOX_SIZE-1)*3+1]=(255+from[(2*BOX_SIZE-1)*3+1])/2;
-			from[(2*BOX_SIZE-1)*3+2]=(255+from[(2*BOX_SIZE-1)*3+2])/2;
+			for (from=bm.rgb_buf,yy=0;yy<BOX_SIZE-1;yy++,
+				     from+=BOX_SIZE*3) {
+				from[0]/=4; from[1]/=4; from[2]/=4;
+				from[(2*BOX_SIZE-1)*3  ]=
+					(255+from[(2*BOX_SIZE-1)*3  ])/2;
+				from[(2*BOX_SIZE-1)*3+1]=
+					(255+from[(2*BOX_SIZE-1)*3+1])/2;
+				from[(2*BOX_SIZE-1)*3+2]=
+					(255+from[(2*BOX_SIZE-1)*3+2])/2;
+			}
 		}
 
 		/* Our colorspace conversion: 18.17us/frame */
@@ -607,7 +614,8 @@ int get_screen_selection(void) {
 }
 
 void make_new_bubblemon_dockapp(void) {
-	int cc, xx, yy, maxwidth;
+	unsigned int cc, yy, maxwidth;
+	int xx;
 	/* We begin with zero bubbles */
 	bm.n_bubbles = 0;
 
@@ -871,7 +879,7 @@ void draw_from_xpm(char **xpm, unsigned char *whither, unsigned int targetw,
                    unsigned int xpmx, unsigned int xpmy, unsigned int xpmw, 
                    unsigned int xpmh, unsigned int color) {
 	unsigned char r=GET_RED(color),g=GET_GRN(color),b=GET_BLU(color);
-	int yy,xx,ncolors,cpp;
+	unsigned int yy,xx,ncolors,cpp;
 	unsigned char * to;
 	char * from;
 	char transparent=0;
@@ -1006,18 +1014,18 @@ void render_secondary(void) {
 	} else {
 		/* draw memory */
 		if (memscreen_megabytes || bm.mem_used > (999999<<10))
-			snprintf(number, 8, "%6lluM", bm.mem_used >> 20);
+			snprintf(number, 8, "%6"PRIu64"M", bm.mem_used >> 20);
 		else
-			snprintf(number, 8, "%6lluK", bm.mem_used >> 10);
+			snprintf(number, 8, "%"PRIu64"K", bm.mem_used >> 10);
 		snprintf(percent, 4, "%+3d", bm.mem_percent);
 		draw_string(number, 3, 2, (bm.mem_percent > 90) ? 1 : 0);
 		draw_string(percent, 39, 2, (bm.mem_percent > 90) ? 1 : 0);
 
 		/* draw swap */
 		if (memscreen_megabytes || bm.swap_used > (999999<<10))
-			snprintf(number, 8, "%6lluM", bm.swap_used >> 20);
+			snprintf(number, 8, "%6"PRIu64"M", bm.swap_used >> 20);
 		else
-			snprintf(number, 8, "%6lluK", bm.swap_used >> 10);
+			snprintf(number, 8, "%6"PRIu64"K", bm.swap_used >> 10);
 		snprintf(percent, 4, "%+3d", bm.swap_percent);
 		draw_string(number, 3, 11, (bm.swap_percent > 90) ? 1 : 0);
 		draw_string(percent, 39, 11, (bm.swap_percent > 90) ? 1 : 0);
@@ -1342,6 +1350,11 @@ void draw_duck(int x, int y, int frame_no, int flipx, int flipy) {
 	duck_left = 0;
 	if (x < 0)
 		duck_left = -(x);
+	if (duck_blink > 0) {
+		if (duck_blink % blinkdelay == 0)
+			duck_colors[1] = 0x808080 ^ duck_colors[1];
+		duck_blink--;
+	}
 	for (yy = duck_top; yy < duck_bottom; yy++) {
 		/* calculate this only once */
 		int ypos = (yy + y) * BOX_SIZE;
