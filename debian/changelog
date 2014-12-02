@@ -1,3 +1,13 @@
+wmbubble (1.52-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+  * debian/patches
+    - Remove directory; patch applied upstream.
+  * debian/rules
+    - Add get-orig-source target.
+
+ -- Doug Torrance <dtorrance@monmouthcollege.edu>  Mon, 01 Dec 2014 23:34:55 -0600
+
 wmbubble (1.51-1) unstable; urgency=low
 
   * New upstream version.
