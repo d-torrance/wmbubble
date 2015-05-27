@@ -1,3 +1,11 @@
+wmbubble (1.53-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/{copyright,install}
+    - Add newlines at end of files.
+
+ -- Doug Torrance <dtorrance@monmouthcollege.edu>  Tue, 26 May 2015 23:32:32 -0500
+
 wmbubble (1.52-1) unstable; urgency=medium
 
   * New upstream release.
